@@ -1,11 +1,11 @@
 FROM golang:1.14.0-alpine3.11
 
-ADD go.mod /ssh-tunnels/
-WORKDIR /ssh-tunnels
+ADD go.mod /ssh-jwt/
+WORKDIR /ssh-jwt
 RUN go mod download
 
-ADD / /ssh-tunnels
-RUN go build -o /usr/bin/ssh-tunnels
+ADD / /ssh-jwt
+RUN go build -o /usr/bin/ssh-jwt
 
 CMD [ "/startup.sh" ]
 

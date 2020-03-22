@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -17,56 +18,140 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type options struct {
+	sshBindHost                string
+	sshPort                    int
+	enableLocalPortForwarding  bool
+	enableRemotePortForwarding bool
+	enablePty                  bool
+	jwtSignatureAlgorithm      jwa.SignatureAlgorithm
+	jwtKey                     string
+	serverPKPath               string
+}
+
 func main() {
 
-	logrus.SetLevel(logrus.DebugLevel)
+	logLevel := flag.String("loglevel", "debug", "debug, info, warning, error")
+	sshBindHost0 := flag.String("bind-host", "0.0.0.0", "Bind host for SSH service. Defaults to 0.0.0.0")
+	sshPort0 := flag.Int("port", 22, "SSH server port to listen on. Defaults to 22")
+	enableRemotePortForwarding0 := flag.Bool("enable-remote-forwarding", false, "Enable remote port forwarding bind. Defaults to false")
+	enableLocalPortForwarding0 := flag.Bool("enable-local-forwarding", false, "Enable local port forwarding. Defaults to false")
+	jwtSignatureAlgorithm0 := flag.String("jwt-algorithm", "HS512", "JWT signature algorithm. Defaults to HS512")
+	jwtKey0 := flag.String("jwt-key", "", "JWT key. Required")
+	enablePty0 := flag.Bool("enable-pty", false, "Enable PTY")
+	serverPKPath0 := flag.String("server-pk-path", "", "File from which to load server private key. If file doesn't exist it will be created on first startup. defaults to '', so that on each start the key will be generated in memory")
+	flag.Parse()
 
-	logrus.Infof("Starting ssh server on port 2222...")
+	switch *logLevel {
+	case "debug":
+		logrus.SetLevel(logrus.DebugLevel)
+		break
+	case "warning":
+		logrus.SetLevel(logrus.WarnLevel)
+		break
+	case "error":
+		logrus.SetLevel(logrus.ErrorLevel)
+		break
+	default:
+		logrus.SetLevel(logrus.InfoLevel)
+	}
+
+	sa := jwa.SignatureAlgorithm(*jwtSignatureAlgorithm0)
+	err := sa.Accept(*jwtSignatureAlgorithm0)
+	if err != nil {
+		logrus.Errorf("JWT signing algorithm is not supported. err=%s", err)
+		panic("JWT signing algorithm not supported")
+	}
+
+	opt := options{
+		sshPort:                    *sshPort0,
+		enableRemotePortForwarding: *enableRemotePortForwarding0,
+		enableLocalPortForwarding:  *enableLocalPortForwarding0,
+		enablePty:                  *enablePty0,
+		sshBindHost:                *sshBindHost0,
+		jwtSignatureAlgorithm:      sa,
+		jwtKey:                     *jwtKey0,
+		serverPKPath:               *serverPKPath0,
+	}
+
+	if opt.jwtKey == "" {
+		logrus.Errorf("--jwt-key is required")
+		panic("--jwt-key is required")
+	}
+
+	logrus.Infof("Starting ssh server on port %d...")
 
 	forwardHandler := &ssh.ForwardedTCPHandler{}
 
 	server := ssh.Server{
 		LocalPortForwardingCallback: ssh.LocalPortForwardingCallback(func(ctx ssh.Context, dhost string, dport uint32) bool {
+			if !opt.enableLocalPortForwarding {
+				return false
+			}
 			claim0 := ctx.Value("lfw")
-			claim := claim0.(string)
-			if claim == "" {
-				logrus.Infof("No local forward claims found in token")
-				return false
+			if claim0 != nil {
+				claim := claim0.(string)
+				if claim == "" {
+					logrus.Infof("No local forward claims found in token")
+					return false
+				}
+
+				accept := matchClaim(claim, dhost, dport)
+
+				if !accept {
+					logrus.Infof("Forward %s:%d is NOT authorized (direct-tcpip)", dhost, dport)
+					return false
+				}
+				logrus.Debugf("Forward %s:%d is authorized (direct-tcpip)", dhost, dport)
+
+				return true
 			}
-
-			accept := matchClaim(claim, dhost, dport)
-
-			if !accept {
-				logrus.Infof("Forward %s:%d is NOT authorized (direct-tcpip)", dhost, dport)
-				return false
-			}
-			logrus.Debugf("Forward %s:%d is authorized (direct-tcpip)", dhost, dport)
-
-			return true
+			return false
 		}),
 		ReversePortForwardingCallback: ssh.ReversePortForwardingCallback(func(ctx ssh.Context, bindHost string, port uint32) bool {
+			if !opt.enableRemotePortForwarding {
+				return false
+			}
 			claim0 := ctx.Value("lfw")
-			claim := claim0.(string)
-			if claim == "" {
-				logrus.Infof("No remote forward claims found in token")
+			if claim0 != nil {
+				claim := claim0.(string)
+				if claim == "" {
+					logrus.Infof("No remote forward claims found in token")
+					return false
+				}
+
+				accept := matchClaim(claim, bindHost, port)
+
+				if !accept {
+					logrus.Infof("Remote bind %s:%d is NOT authorized (tcpip-forward)", bindHost, port)
+					return false
+				}
+				logrus.Debugf("Remote bind %s:%d is authorized (tcpip-forward)", bindHost, port)
+
+				return true
+			}
+			return false
+		}),
+		PtyCallback: ssh.PtyCallback(func(ctx ssh.Context, pty ssh.Pty) bool {
+			if !opt.enablePty {
 				return false
 			}
-
-			accept := matchClaim(claim, bindHost, port)
-
-			if !accept {
-				logrus.Infof("Remote bind %s:%d is NOT authorized (tcpip-forward)", bindHost, port)
-				return false
+			pty0 := ctx.Value("pty")
+			if pty0 != nil {
+				pty1 := pty0.(string)
+				if pty1 == "true" {
+					logrus.Debugf("PTY is authorized")
+					return true
+				}
 			}
-			logrus.Debugf("Remote bind %s:%d is authorized (tcpip-forward)", bindHost, port)
-
-			return true
+			logrus.Debugf("PTY is NOT authorized")
+			return false
 		}),
 		PasswordHandler: ssh.PasswordHandler(func(ctx ssh.Context, password string) bool {
 			//SAMPLE: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhaWQiOiIyMzQyNDM0NTM0NTMiLCJtaWQiOiJHVEUzNDU2IiwiZXhwIjoxNTg3NTI5NjkzLCJyZnciOiIwLjAuMC4wOjQzNDMiLCJsZnciOiIyMDEuMjEuNDMuNDU6ODA4MCJ9.iaUGlrO-3HWdE-8irizqMfHLYV0Ctiu3N3qdEdirwJk
 			//SAMPLE2: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhaWQiOiIyMzQyNDM0NTM0NTMiLCJtaWQiOiJHVEUzNDU2IiwiZXhwIjoxNTg3NTI5NjkzLCJyZnciOiIwLjAuMC4wOjQzNDMiLCJsZnciOiIxMC4xLjEuMjU0OjgwIn0.ynmGKtRJyr5KowmD34m3A4OBnMdcmj9GCC0Vt3oyZHc
 			tokenString := password
-			token, err := jwt.Parse(bytes.NewReader([]byte(tokenString)), jwt.WithVerify(jwa.HS256, []byte("123")))
+			token, err := jwt.Parse(bytes.NewReader([]byte(tokenString)), jwt.WithVerify(opt.jwtSignatureAlgorithm, []byte(opt.jwtKey)))
 			if err != nil {
 				logrus.Infof("Failed to parse JWT token. err=%s", err)
 				return false
@@ -78,10 +163,8 @@ func main() {
 			}
 
 			//get remote forward permission
-			one := false
 			rfw, ok := token.Get("rfw")
 			if ok {
-				one = true
 				ctx.SetValue("rfw", rfw)
 			} else {
 				ctx.SetValue("rfw", "")
@@ -90,25 +173,24 @@ func main() {
 			//get local forward permission
 			lfw, ok := token.Get("lfw")
 			if ok {
-				one = true
 				ctx.SetValue("lfw", lfw)
 			} else {
 				ctx.SetValue("lfw", "")
 			}
 
-			if !one {
-				logrus.Infof("Invalid token received. It must have either 'lfw' (local forward claim) or 'rfw' (remote forward claim). Ex.: lfw=201.234.32.11:3455 rfw=0.0.0.0:34938.")
-				return false
+			//get PTY permission
+			pty, ok := token.Get("pty")
+			if ok {
+				ctx.SetValue("pty", pty)
+			} else {
+				ctx.SetValue("pty", "false")
 			}
 
-			logrus.Debugf("Valid token received. remoteForward=%s. localForward=%s", rfw, lfw)
+			logrus.Debugf("Valid token received. remoteForward=%s. localForward=%s pty=%s", rfw, lfw, pty)
 
 			return true
 		}),
-		Addr: ":2222",
-		PtyCallback: ssh.PtyCallback(func(ctx ssh.Context, pty ssh.Pty) bool {
-			return true
-		}),
+		Addr: fmt.Sprintf("%s:%d", opt.sshBindHost, opt.sshPort),
 		Handler: ssh.Handler(func(s ssh.Session) {
 			io.WriteString(s, "Waiting for connections...\n")
 
@@ -143,11 +225,11 @@ func main() {
 			"tcpip-forward":        forwardHandler.HandleSSHRequest,
 			"cancel-tcpip-forward": forwardHandler.HandleSSHRequest,
 		},
-		// IdleTimeout: 30 * time.Second,
-		// MaxTimeout:  120 * time.Second,
+		// IdleTimeout: 1 * time.Second,
+		// MaxTimeout:  3 * time.Second,
 	}
 
-	err := server.ListenAndServe()
+	err = server.ListenAndServe()
 	if err != nil {
 		logrus.Errorf("Startup error %s", err)
 	}
