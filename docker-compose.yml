@@ -1,0 +1,15 @@
+version: '3.7'
+
+services:
+
+  ssh-tunnels:
+    build: .
+    image: flaviostutz/ssh-tunnels
+    ports:
+      - "2222:2222"
+    restart: always
+    environment:
+      - JWT_PUB_KEY=123
+    volumes:
+      - ../:/workspace
+
