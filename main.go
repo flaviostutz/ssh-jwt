@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
@@ -26,20 +27,21 @@ type options struct {
 	enablePty                  bool
 	jwtSignatureAlgorithm      jwa.SignatureAlgorithm
 	jwtKey                     string
+	jwtKeyFile                 string
 	serverPKPath               string
 }
 
 func main() {
 
-	logLevel := flag.String("loglevel", "debug", "debug, info, warning, error")
+	logLevel := flag.String("log-level", "debug", "debug, info, warning, error")
 	sshBindHost0 := flag.String("bind-host", "0.0.0.0", "Bind host for SSH service. Defaults to 0.0.0.0")
 	sshPort0 := flag.Int("port", 22, "SSH server port to listen on. Defaults to 22")
 	enableRemotePortForwarding0 := flag.Bool("enable-remote-forwarding", false, "Enable remote port forwarding bind. Defaults to false")
 	enableLocalPortForwarding0 := flag.Bool("enable-local-forwarding", false, "Enable local port forwarding. Defaults to false")
-	jwtSignatureAlgorithm0 := flag.String("jwt-algorithm", "HS512", "JWT signature algorithm. Defaults to HS512")
-	jwtKey0 := flag.String("jwt-key", "", "JWT key. Required")
 	enablePty0 := flag.Bool("enable-pty", false, "Enable PTY")
-	serverPKPath0 := flag.String("server-pk-path", "", "File from which to load server private key. If file doesn't exist it will be created on first startup. defaults to '', so that on each start the key will be generated in memory")
+	jwtSignatureAlgorithm0 := flag.String("jwt-algorithm", "HS512", "JWT signature algorithm. Defaults to HS512")
+	jwtKey0 := flag.String("jwt-key", "", "JWT key contents. Required if jwt-key-file is not defined")
+	jwtKeyFile0 := flag.String("jwt-key-file", "", "JWT key file. Required")
 	flag.Parse()
 
 	switch *logLevel {
@@ -60,7 +62,7 @@ func main() {
 	err := sa.Accept(*jwtSignatureAlgorithm0)
 	if err != nil {
 		logrus.Errorf("JWT signing algorithm is not supported. err=%s", err)
-		panic("JWT signing algorithm not supported")
+		panic("")
 	}
 
 	opt := options{
@@ -70,22 +72,53 @@ func main() {
 		enablePty:                  *enablePty0,
 		sshBindHost:                *sshBindHost0,
 		jwtSignatureAlgorithm:      sa,
+		jwtKeyFile:                 *jwtKeyFile0,
 		jwtKey:                     *jwtKey0,
-		serverPKPath:               *serverPKPath0,
 	}
 
+	//load key contents
+	jwtKeyContents := []byte{}
 	if opt.jwtKey == "" {
-		logrus.Errorf("--jwt-key is required")
-		panic("--jwt-key is required")
+		if opt.jwtKeyFile != "" {
+			jwtKeyContents, err = ioutil.ReadFile(opt.jwtKeyFile)
+			if err != nil {
+				logrus.Errorf("Couldn't read key file contents. err=%s", err)
+				return
+			}
+		} else {
+			logrus.Errorf("Either --jwt-key-file of --jwt-key is required")
+			return
+		}
+	} else {
+		jwtKeyContents = []byte(jwtKeyContents)
 	}
 
-	logrus.Infof("Starting ssh server on port %d...")
+	logrus.Infof("Starting ssh server on port %s:%d...", opt.sshBindHost, opt.sshPort)
 
 	forwardHandler := &ssh.ForwardedTCPHandler{}
+
+	if opt.enableLocalPortForwarding {
+		logrus.Infof("Local port forwarding is enabled")
+	} else {
+		logrus.Infof("Local port forwarding is disabled")
+	}
+
+	if opt.enableRemotePortForwarding {
+		logrus.Infof("Remote port forwarding is enabled")
+	} else {
+		logrus.Infof("Remote port forwarding is disabled")
+	}
+
+	if opt.enablePty {
+		logrus.Infof("PTY is enabled")
+	} else {
+		logrus.Infof("PTY is disabled")
+	}
 
 	server := ssh.Server{
 		LocalPortForwardingCallback: ssh.LocalPortForwardingCallback(func(ctx ssh.Context, dhost string, dport uint32) bool {
 			if !opt.enableLocalPortForwarding {
+				logrus.Debugf("Local port forwarding is disabled")
 				return false
 			}
 			claim0 := ctx.Value("lfw")
@@ -99,10 +132,10 @@ func main() {
 				accept := matchClaim(claim, dhost, dport)
 
 				if !accept {
-					logrus.Infof("Forward %s:%d is NOT authorized (direct-tcpip)", dhost, dport)
+					logrus.Infof("Local port forward %s:%d is NOT authorized (direct-tcpip)", dhost, dport)
 					return false
 				}
-				logrus.Debugf("Forward %s:%d is authorized (direct-tcpip)", dhost, dport)
+				logrus.Debugf("Local port forward %s:%d is authorized (direct-tcpip)", dhost, dport)
 
 				return true
 			}
@@ -110,6 +143,7 @@ func main() {
 		}),
 		ReversePortForwardingCallback: ssh.ReversePortForwardingCallback(func(ctx ssh.Context, bindHost string, port uint32) bool {
 			if !opt.enableRemotePortForwarding {
+				logrus.Debugf("Remote port forwarding is disabled")
 				return false
 			}
 			claim0 := ctx.Value("lfw")
@@ -123,10 +157,10 @@ func main() {
 				accept := matchClaim(claim, bindHost, port)
 
 				if !accept {
-					logrus.Infof("Remote bind %s:%d is NOT authorized (tcpip-forward)", bindHost, port)
+					logrus.Infof("Remote port forwarding %s:%d is NOT authorized (tcpip-forward)", bindHost, port)
 					return false
 				}
-				logrus.Debugf("Remote bind %s:%d is authorized (tcpip-forward)", bindHost, port)
+				logrus.Debugf("Remote port forwarding %s:%d is authorized (tcpip-forward)", bindHost, port)
 
 				return true
 			}
@@ -151,7 +185,7 @@ func main() {
 			//SAMPLE: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhaWQiOiIyMzQyNDM0NTM0NTMiLCJtaWQiOiJHVEUzNDU2IiwiZXhwIjoxNTg3NTI5NjkzLCJyZnciOiIwLjAuMC4wOjQzNDMiLCJsZnciOiIyMDEuMjEuNDMuNDU6ODA4MCJ9.iaUGlrO-3HWdE-8irizqMfHLYV0Ctiu3N3qdEdirwJk
 			//SAMPLE2: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhaWQiOiIyMzQyNDM0NTM0NTMiLCJtaWQiOiJHVEUzNDU2IiwiZXhwIjoxNTg3NTI5NjkzLCJyZnciOiIwLjAuMC4wOjQzNDMiLCJsZnciOiIxMC4xLjEuMjU0OjgwIn0.ynmGKtRJyr5KowmD34m3A4OBnMdcmj9GCC0Vt3oyZHc
 			tokenString := password
-			token, err := jwt.Parse(bytes.NewReader([]byte(tokenString)), jwt.WithVerify(opt.jwtSignatureAlgorithm, []byte(opt.jwtKey)))
+			token, err := jwt.Parse(bytes.NewReader([]byte(tokenString)), jwt.WithVerify(opt.jwtSignatureAlgorithm, jwtKeyContents))
 			if err != nil {
 				logrus.Infof("Failed to parse JWT token. err=%s", err)
 				return false

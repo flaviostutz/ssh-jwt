@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 set -e
 # set -x
@@ -10,5 +10,7 @@ ssh-jwt \
      --port=$BIND_PORT \
      --enable-remote-forwarding=$ENABLE_REMOTE_FORWARDING \
      --enable-local-forwarding=$ENABLE_LOCAL_FORWARDING \
-     --enable-pty=$ENABLE_PTY     
-
+     --enable-pty=$ENABLE_PTY \
+     --jwt-algorithm=$JWT_ALGORITHM \
+     --jwt-key=$JWT_KEY \
+     --jwt-key-file=/run/secrets/$JWT_KEY_SECRET_NAME

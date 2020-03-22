@@ -6,10 +6,31 @@ services:
     build: .
     image: flaviostutz/ssh-tunnels
     ports:
-      - "2222:2222"
-    restart: always
+      - "2222:22"
     environment:
-      - JWT_PUB_KEY=123
-    volumes:
-      - ../:/workspace
+      - JWT_KEY=123
+      - ENABLE_LOCAL_FORWARDING=true
+      - ENABLE_REMOTE_FORWARDING=true
+      - ENABLE_PTY=true
+      - LOG_LEVEL=debug
+    # volumes:
+    #   - ../:/workspace
 
+  ssh-tunnels-rsa:
+    build: .
+    image: flaviostutz/ssh-tunnels
+    ports:
+      - "2323:22"
+    secrets:
+      - rs-pub-key
+    environment:
+      - JWT_ALGORITHM=RS512
+      - JWT_KEY_SECRET_NAME=rs-pub-key
+      - ENABLE_LOCAL_FORWARDING=true
+      - ENABLE_REMOTE_FORWARDING=true
+      - ENABLE_PTY=true
+      - LOG_LEVEL=debug
+
+secrets:
+  rs-pub-key:
+    file: ./test.pub
