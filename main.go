@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -77,7 +80,7 @@ func main() {
 	}
 
 	//load key contents
-	jwtKeyContents := []byte{}
+	var jwtKeyContents []byte
 	if opt.jwtKey == "" {
 		if opt.jwtKeyFile != "" {
 			jwtKeyContents, err = ioutil.ReadFile(opt.jwtKeyFile)
@@ -85,16 +88,23 @@ func main() {
 				logrus.Errorf("Couldn't read key file contents. err=%s", err)
 				return
 			}
+			logrus.Debugf("JWT key loaded from file '%s'", opt.jwtKeyFile)
 		} else {
 			logrus.Errorf("Either --jwt-key-file of --jwt-key is required")
 			return
 		}
 	} else {
-		jwtKeyContents = []byte(jwtKeyContents)
+		jwtKeyContents = []byte(opt.jwtKey)
+		logrus.Debugf("JWT key loaded from 'jwt-key' arg")
+	}
+
+	jwtKey, err := parsePKIXPublicKeyFromPEM(jwtKeyContents)
+	if err != nil {
+		logrus.Debugf("Couldn't parse public key from PEM. err=%s", err)
+		jwtKey = jwtKeyContents
 	}
 
 	logrus.Infof("Starting ssh server on port %s:%d...", opt.sshBindHost, opt.sshPort)
-
 	forwardHandler := &ssh.ForwardedTCPHandler{}
 
 	if opt.enableLocalPortForwarding {
@@ -132,10 +142,10 @@ func main() {
 				accept := matchClaim(claim, dhost, dport)
 
 				if !accept {
-					logrus.Infof("Local port forward %s:%d is NOT authorized (direct-tcpip)", dhost, dport)
+					logrus.Infof("Denying local port forward %s:%d (direct-tcpip)", dhost, dport)
 					return false
 				}
-				logrus.Debugf("Local port forward %s:%d is authorized (direct-tcpip)", dhost, dport)
+				logrus.Debugf("Allowing local port forward %s:%d (direct-tcpip)", dhost, dport)
 
 				return true
 			}
@@ -157,10 +167,10 @@ func main() {
 				accept := matchClaim(claim, bindHost, port)
 
 				if !accept {
-					logrus.Infof("Remote port forwarding %s:%d is NOT authorized (tcpip-forward)", bindHost, port)
+					logrus.Infof("Denying remote port forwarding %s:%d (tcpip-forward)", bindHost, port)
 					return false
 				}
-				logrus.Debugf("Remote port forwarding %s:%d is authorized (tcpip-forward)", bindHost, port)
+				logrus.Debugf("Allowing remote port forwarding %s:%d (tcpip-forward)", bindHost, port)
 
 				return true
 			}
@@ -174,18 +184,19 @@ func main() {
 			if pty0 != nil {
 				pty1 := pty0.(string)
 				if pty1 == "true" {
-					logrus.Debugf("PTY is authorized")
+					logrus.Debugf("Denying PTY")
 					return true
 				}
 			}
-			logrus.Debugf("PTY is NOT authorized")
+			logrus.Debugf("Allowing PTY")
 			return false
 		}),
 		PasswordHandler: ssh.PasswordHandler(func(ctx ssh.Context, password string) bool {
 			//SAMPLE: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhaWQiOiIyMzQyNDM0NTM0NTMiLCJtaWQiOiJHVEUzNDU2IiwiZXhwIjoxNTg3NTI5NjkzLCJyZnciOiIwLjAuMC4wOjQzNDMiLCJsZnciOiIyMDEuMjEuNDMuNDU6ODA4MCJ9.iaUGlrO-3HWdE-8irizqMfHLYV0Ctiu3N3qdEdirwJk
 			//SAMPLE2: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhaWQiOiIyMzQyNDM0NTM0NTMiLCJtaWQiOiJHVEUzNDU2IiwiZXhwIjoxNTg3NTI5NjkzLCJyZnciOiIwLjAuMC4wOjQzNDMiLCJsZnciOiIxMC4xLjEuMjU0OjgwIn0.ynmGKtRJyr5KowmD34m3A4OBnMdcmj9GCC0Vt3oyZHc
 			tokenString := password
-			token, err := jwt.Parse(bytes.NewReader([]byte(tokenString)), jwt.WithVerify(opt.jwtSignatureAlgorithm, jwtKeyContents))
+			fmt.Printf(">>>> %s, %v\n", opt.jwtSignatureAlgorithm, jwtKey)
+			token, err := jwt.Parse(bytes.NewReader([]byte(tokenString)), jwt.WithVerify(opt.jwtSignatureAlgorithm, jwtKey))
 			if err != nil {
 				logrus.Infof("Failed to parse JWT token. err=%s", err)
 				return false
@@ -284,4 +295,35 @@ func matchClaim(claim string, host string, port uint32) bool {
 func setWinsize(f *os.File, w, h int) {
 	syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), uintptr(syscall.TIOCSWINSZ),
 		uintptr(unsafe.Pointer(&struct{ h, w, x, y uint16 }{uint16(h), uint16(w), 0, 0})))
+}
+
+// func parseKey(keyContents []byte, alg jwa.SignatureAlgorithm) (interface{}, error) {
+// 	// ES256       SignatureAlgorithm = "ES256" // ECDSA using P-256 and SHA-256
+// 	// HS256       SignatureAlgorithm = "HS256" // HMAC using SHA-256
+// 	// PS256       SignatureAlgorithm = "PS256" // RSASSA-PSS using SHA256 and MGF1-SHA256
+// 	// RS512       SignatureAlgorithm = "RS512" // RSASSA-PKCS-v1.5 using SHA-512
+
+// 	//HMAC
+// 	if strings.HasPrefix(alg.String(), "RS") || strings.HasPrefix(alg.String(), "PS") {
+// 		publicKey, err := parseRsaPublicKeyFromPem(keyContents)
+// 		if err != nil {
+// 			return "", err
+// 		}
+// 		return publicKey, nil
+// 	} else if strings.HasPrefix(alg.String(), "ES") {
+// 	} else {
+// 		return keyContents, nil
+// 	}
+// }
+
+func parsePKIXPublicKeyFromPEM(pubPEM []byte) (interface{}, error) {
+	block, _ := pem.Decode(pubPEM)
+	if block == nil {
+		return nil, errors.New("failed to parse PEM block containing the key")
+	}
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	return pub, nil
 }

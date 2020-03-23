@@ -33,4 +33,4 @@ services:
 
 secrets:
   rs-pub-key:
-    file: ./test.pub
+    file: ./test_rsa.pub
