@@ -31,7 +31,6 @@ type options struct {
 	jwtSignatureAlgorithm      jwa.SignatureAlgorithm
 	jwtKey                     string
 	jwtKeyFile                 string
-	serverPKPath               string
 }
 
 func main() {
