@@ -155,7 +155,7 @@ func main() {
 				logrus.Debugf("Remote port forwarding is disabled")
 				return false
 			}
-			claim0 := ctx.Value("lfw")
+			claim0 := ctx.Value("rfw")
 			if claim0 != nil {
 				claim := claim0.(string)
 				if claim == "" {
