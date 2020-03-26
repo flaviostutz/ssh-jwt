@@ -26,23 +26,46 @@ services:
 
 * run docker-compose up
 
+* Open http://jwt.io
+
+* Create a JWT key with the following contents
+
+header
+```json
+{
+  "alg": "HS512",
+  "typ": "JWT"
+}
+```
+
+payload
+```json
+{
+  "aid": "234243453453",
+  "mid": "GTE3456",
+  "exp": 1587529693,
+  "rfw": "0.0.0.0:4343 0.0.0.0:4242",
+  "lfw": "10.1.1.254:80 10.1.1.254:81 45.55.44.56:80",
+  "pty": "true"
+}
+```
+
+signature
+use password "123"
+
+* Copy the encoded/signed JWT contents to clipboard
+
 * In a terminal, run
 
 ```bash
 ssh root@localhost -p 2222
 ```
 
-* When asked for password, paste
-
-```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhaWQiOiIyMzQyNDM0NTM0NTMiLCJtaWQiOiJHVEUzNDU2IiwiZXhwIjoxNTg3NTI5NjkzLCJyZnciOiIwLjAuMC4wOjQzNDMgMC4wLjAuMDo0MjQyIiwibGZ3IjoiMTAuMS4xLjI1NDo4MCAxMC4xLjEuMjU0OjgxIDQ1LjU1LjQ0LjU2OjgwIiwicHR5IjoidHJ1ZSJ9.wVQ46URtFFntfwfxJKGNgXoDLvFFzvV-HQGOsM0-SHg
-```
+* When asked for password, paste Enconded JWT contents
 
 * If all is OK, you will be connected to a shell session.
 
-* Inspect token contents to view its contents by opening https://jwt.io/ and pasting the above contents to view token structure
-
-* Modify it to set "pty" to "false" and try to connect again
+* Modify JWT claim "pty" to "false" and try to connect again
 
 * If the token is invalid or it doesn't have claim "pty", you connection will be refused.
 

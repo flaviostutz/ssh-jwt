@@ -1,1 +1,4 @@
-test.pub
+test_jwt.token
+test_rsa.key
+test_rsa.pub
+
