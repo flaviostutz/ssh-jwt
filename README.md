@@ -69,6 +69,9 @@ ssh root@localhost -p 2222
 
 * If the token is invalid or it doesn't have claim "pty", you connection will be refused.
 
+
+
+
 ### RS512 pub/priv signing key
 
 * create docker-compose.yml:
@@ -93,19 +96,31 @@ secrets:
     file: ./test_rsa.pub
 ```
 
+* Open https://8gwifi.org/jwsgen.jsp
+
+* Create a JWT key with the following contents
+
+JWS Algo: RS512
+
+Payload
+```json
+{
+  "aid": "234243453453",
+  "mid": "GTE3456",
+  "exp": 1587529693,
+  "rfw": "0.0.0.0:4343 0.0.0.0:4242",
+  "lfw": "10.1.1.254:80 10.1.1.254:81 45.55.44.56:80",
+  "pty": "true"
+}
+```
+
+Click on "Generate JWS Keys"
+
 * Create file test_rsa.pub with public key contents
 
-```
------BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArha48sD6KZfBbRQBeMpm
-io4VOFu7hCCdJ0ICl845En2/IXvItgfmVXJd+h0aoZV9PBzW9l65ROfvEMmLrtla
-DSCXLDnQwkc0NLGW0s4EdLR5wnUOgAuc4/Pp/pOEJATsc/JZxXPUbU2delMi9uYB
-Jfgo/jeh0HGnDVi9dboZdjfRNndRQDJkEdBEVM9jHmTSZROsmgSem1tlrNT5Jw0u
-SaSXxRYb3qo8A7044Ck+P436iprfNm2AgOLHcynjtZSKoLerAACh+7ZdcWPYLCB9
-4ynKBAbhCme0Rc0rpexF+ChjaDLmWJumEFkgRKPohGm7jUTfdH5uHx27AKMMBUjh
-yQIDAQAB
------END PUBLIC KEY-----
-```
+* Create file test_rsa.key with private key contents
+
+* Copy the contents of the JWT key from the "Serialize" field from the site
 
 * Run docker-compose up
 
@@ -117,17 +132,6 @@ yQIDAQAB
 
 * If any web server is running on 10.1.1.254:80 it will get its contents
 
-* Explore other tokens by playing with https://8gwifi.org/jwsgen.jsp. Token contents
-```json
-{
-  "aid": "234243453453",
-  "mid": "GTE3456",
-  "exp": 1587529693,
-  "rfw": "0.0.0.0:4343 0.0.0.0:4242",
-  "lfw": "10.1.1.254:80 10.1.1.254:81 45.55.44.56:80",
-  "pty": "true"
-}
-```
 
 ## JWT token Claims
 

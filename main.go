@@ -194,7 +194,6 @@ func main() {
 			//SAMPLE: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhaWQiOiIyMzQyNDM0NTM0NTMiLCJtaWQiOiJHVEUzNDU2IiwiZXhwIjoxNTg3NTI5NjkzLCJyZnciOiIwLjAuMC4wOjQzNDMiLCJsZnciOiIyMDEuMjEuNDMuNDU6ODA4MCJ9.iaUGlrO-3HWdE-8irizqMfHLYV0Ctiu3N3qdEdirwJk
 			//SAMPLE2: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhaWQiOiIyMzQyNDM0NTM0NTMiLCJtaWQiOiJHVEUzNDU2IiwiZXhwIjoxNTg3NTI5NjkzLCJyZnciOiIwLjAuMC4wOjQzNDMiLCJsZnciOiIxMC4xLjEuMjU0OjgwIn0.ynmGKtRJyr5KowmD34m3A4OBnMdcmj9GCC0Vt3oyZHc
 			tokenString := password
-			fmt.Printf(">>>> %s, %v\n", opt.jwtSignatureAlgorithm, jwtKey)
 			token, err := jwt.Parse(bytes.NewReader([]byte(tokenString)), jwt.WithVerify(opt.jwtSignatureAlgorithm, jwtKey))
 			if err != nil {
 				logrus.Infof("Failed to parse JWT token. err=%s", err)
@@ -295,25 +294,6 @@ func setWinsize(f *os.File, w, h int) {
 	syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), uintptr(syscall.TIOCSWINSZ),
 		uintptr(unsafe.Pointer(&struct{ h, w, x, y uint16 }{uint16(h), uint16(w), 0, 0})))
 }
-
-// func parseKey(keyContents []byte, alg jwa.SignatureAlgorithm) (interface{}, error) {
-// 	// ES256       SignatureAlgorithm = "ES256" // ECDSA using P-256 and SHA-256
-// 	// HS256       SignatureAlgorithm = "HS256" // HMAC using SHA-256
-// 	// PS256       SignatureAlgorithm = "PS256" // RSASSA-PSS using SHA256 and MGF1-SHA256
-// 	// RS512       SignatureAlgorithm = "RS512" // RSASSA-PKCS-v1.5 using SHA-512
-
-// 	//HMAC
-// 	if strings.HasPrefix(alg.String(), "RS") || strings.HasPrefix(alg.String(), "PS") {
-// 		publicKey, err := parseRsaPublicKeyFromPem(keyContents)
-// 		if err != nil {
-// 			return "", err
-// 		}
-// 		return publicKey, nil
-// 	} else if strings.HasPrefix(alg.String(), "ES") {
-// 	} else {
-// 		return keyContents, nil
-// 	}
-// }
 
 func parsePKIXPublicKeyFromPEM(pubPEM []byte) (interface{}, error) {
 	block, _ := pem.Decode(pubPEM)
