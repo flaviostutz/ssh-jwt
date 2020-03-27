@@ -2,9 +2,9 @@ version: '3.7'
 
 services:
 
-  ssh-tunnels:
+  ssh-jwt:
     build: .
-    image: flaviostutz/ssh-tunnels
+    image: flaviostutz/ssh-jwt
     ports:
       - "2222:22"
     environment:
