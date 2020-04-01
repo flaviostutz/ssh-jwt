@@ -83,6 +83,8 @@ services:
     image: flaviostutz/ssh-jwt
     ports:
       - "2222:22"
+    secrets:
+      - rs-pub-key
     environment:
       - JWT_ALGORITHM=RS512
       - JWT_KEY_SECRET_NAME=rs-pub-key
