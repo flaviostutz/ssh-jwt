@@ -47,6 +47,9 @@ func main() {
 	flag.Parse()
 
 	switch *logLevel {
+	case "trace":
+		logrus.SetLevel(logrus.TraceLevel)
+		break
 	case "debug":
 		logrus.SetLevel(logrus.DebugLevel)
 		break
@@ -279,10 +282,14 @@ func main() {
 }
 
 func matchClaim(claim string, host string, port uint32) bool {
+	claim = strings.ReplaceAll(claim, "localhost", "127.0.0.1")
+	host = strings.ReplaceAll(host, "localhost", "127.0.0.1")
 	cps := strings.Split(claim, " ")
 	accept := false
 	for _, cp := range cps {
+		logrus.Tracef("claim: %v -- host: %v -- port: %v", claim, host, port)
 		if cp == fmt.Sprintf("%s:%d", host, port) {
+			logrus.Trace("accepted")
 			accept = true
 			break
 		}
