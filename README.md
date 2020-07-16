@@ -1,4 +1,7 @@
 # ssh-jwt
+
+[<img src="https://img.shields.io/docker/automated/flaviostutz/ssh-jwt"/>](https://hub.docker.com/r/flaviostutz/ssh-jwt)
+
 A SSH server that authorizes PTY, remote or local port forwarding based on JWT token entered as password.
 
 View ENVs and Usage for more information on how to launch this.
